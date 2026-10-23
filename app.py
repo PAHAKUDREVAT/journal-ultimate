@@ -42,7 +42,11 @@ body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#222;padding
 table{width:100%;border-collapse:collapse;margin-top:15px;font-size:11px;}
 th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;word-wrap:break-word; vertical-align:top;}
 th{background:#f8f9fa; font-weight:bold;} 
-input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px;}
+input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px; border: 1px solid #ddd;}
+input:focus, select:focus { border-color: #1e3a5f; outline: none; }
+/* Стили для инлайн-полей в таблице */
+td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px solid #ccc; background: #fff;}
+td input[readonly] { background: #f0f0f0; border-color: transparent; }
 .btn{background:#1e3a5f;color:#fff;padding:10px;border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:10px;font-weight:bold;}
 .high{background-color:#ffe6e6;color:#b03030;font-weight:bold;}
 .col-form{display:flex;gap:15px;margin-bottom:10px;}
@@ -52,83 +56,165 @@ input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;
 @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 </style></head><body><div class="card">
 <h2 style="margin-top:0;">Журнал заявок маркшейдерской службы</h2>
-{% if edit_mode %}<h3>Редактирование заявки №{{ r['id'] }}</h3>{% endif %}
-<form method="POST" action="{% if edit_mode %}/update/{{ r['id'] }}{% else %}/create{% endif %}">
+<form method="POST" action="/create">
 <div class="col-form">
     <div class="col">
-        <label>Участок:</label><input name="area" value="{{ r['area'] if r else '' }}">
-        <label>№ проекта:</label><input name="project_no" value="{{ r['project_no'] if r else '' }}">
-        <label>Горизонт:</label><input name="horizon" value="{{ r['horizon'] if r else '' }}">
-        <label>Вид работ:</label><textarea name="work_type" rows="2">{{ r['work_type'] if r else '' }}</textarea>
-        <label>ФИО лица, подавшего заявку:</label><input name="author" required value="{{ r['created_by'] if r else saved_author }}">
-        <label>Контактный телефон:</label><input name="phone" value="{{ r['phone'] if r else saved_phone }}">
+        <label>Участок:</label><input name="area" value="">
+        <label>№ проекта:</label><input name="project_no" value="">
+        <label>Горизонт:</label><input name="horizon" value="">
+        <label>Вид работ:</label><textarea name="work_type" rows="2"></textarea>
     </div>
     <div class="col">
+        <label>ФИО лица, подавшего заявку:</label><input name="author" required value="{{ saved_author }}">
+        <label>Контактный телефон:</label><input name="phone" value="{{ saved_phone }}">
         <label>Безопасно / Нет / Не требуется:</label>
         <select name="safety">
-            <option value="Безопасно" {% if r and r['safety'] == 'Безопасно' %}selected{% endif %}>Безопасно</option>
-            <option value="Нет" {% if r and r['safety'] == 'Нет' %}selected{% endif %}>Нет (опасно)</option>
-            <option value="Не требуется" {% if r and r['safety'] == 'Не требуется' %}selected{% endif %}>Не требуется</option>
+            <option value="Безопасно">Безопасно</option>
+            <option value="Нет">Нет (опасно)</option>
+            <option value="Не требуется">Не требуется</option>
         </select>
         <label>Приоритет:</label>
         <select name="priority">
-            <option value="Низкий" {% if r and r['priority'] == 'Низкий' %}selected{% endif %}>Низкий</option>
-            <option value="Обычный" {% if not r or r['priority'] == 'Обычный' %}selected{% endif %}>Обычный</option>
-            <option value="Высокий" {% if r and r['priority'] == 'Высокий' %}selected{% endif %}>Высокий</option>
-            <option value="Срочный" {% if r and r['priority'] == 'Срочный' %}selected{% endif %}>Срочный</option>
-        </select>
-        <label>ФИО исполнителя:</label><input name="executor" value="{{ r['executor'] if r else '' }}">
-        <label>Дата выполнения:</label><input name="completion_date" type="date" value="{{ r['completion_date'] if r else '' }}">
-        <label>Статус выполнения:</label>
-        <select name="status">
-            <option value="Новая" {% if not r or r['status'] == 'Новая' %}selected{% endif %}>Новая</option>
-            <option value="Принята" {% if r and r['status'] == 'Принята' %}selected{% endif %}>Принята</option>
-            <option value="В работе" {% if r and r['status'] == 'В работе' %}selected{% endif %}>В работе</option>
-            <option value="Выполнена" {% if r and r['status'] == 'Выполнена' %}selected{% endif %}>Выполнена</option>
-            <option value="Отклонена" {% if r and r['status'] == 'Отклонена' %}selected{% endif %}>Отклонена</option>
+            <option value="Низкий">Низкий</option>
+            <option value="Обычный" selected>Обычный</option>
+            <option value="Высокий">Высокий</option>
+            <option value="Срочный">Срочный</option>
         </select>
     </div>
     <div class="col">
-        <label>Примечание:</label><textarea name="comment" rows="5">{{ r['comment'] if r else '' }}</textarea>
-        <label>Дата и время подачи (не меняется):</label><input value="{{ r['created_at'] if r else now }}" readonly style="background:#eee;">
+        <label>Примечание (при подаче):</label><textarea name="comment" rows="4"></textarea>
+        <label>Дата и время подачи (не меняется):</label><input value="{{ now }}" readonly style="background:#eee;">
     </div>
 </div>
-<button type="submit" class="btn">{{ 'Сохранить изменения' if edit_mode else 'Подать заявку' }}</button>
+<button type="submit" class="btn">Подать заявку</button>
 </form>
-{% if edit_mode %}<div style="text-align:center;margin-top:10px;"><a href="/">Отмена</a></div>{% endif %}
-{% if not edit_mode %}
 <hr style="margin:20px 0; border:0; border-top:1px solid #ddd;">
-<div class="sync-badge"><span class="dot"></span> Обновление каждые 2 секунды</div>
+<div class="sync-badge"><span class="dot"></span> Обновление каждые 2 секунды. Изменения в зеленых колонках сохраняются автоматически.</div>
 <table>
-<tr><th>№</th><th>Участок</th><th>Дата и время</th><th>№ проекта</th><th>Горизонт</th><th>Вид работ</th><th>ФИО подавшего</th><th>Телефон</th><th>Безопасность</th><th>Приоритет</th><th>Исполнитель</th><th>Дата вып.</th><th>Статус</th><th>Примечание</th><th>Действие</th></tr>
+<tr>
+    <th>№</th><th>Участок</th><th>Дата и время</th><th>№ проекта</th><th>Горизонт</th><th>Вид работ</th><th>ФИО подавшего</th><th>Телефон</th><th>Безопасность</th><th>Приоритет</th>
+    <th style="background:#e8f4e8;">Исполнитель</th>
+    <th style="background:#e8f4e8;">Дата вып.</th>
+    <th style="background:#e8f4e8;">Статус</th>
+    <th style="background:#e8f4e8;">Примечание</th>
+</tr>
 <tbody id="table-body">
 {% for req in requests %}
-<tr class="{% if req['priority'] in ['Высокий','Срочный'] and req['status'] not in ['Выполнена', 'Отклонена'] %}high{% endif %}">
-    <td>{{req['id']}}</td><td>{{req['area']}}</td><td>{{req['created_at']}}</td><td>{{req['project_no']}}</td><td>{{req['horizon']}}</td><td>{{req['work_type']}}</td><td>{{req['created_by']}}</td><td>{{req['phone']}}</td><td>{{req['safety']}}</td><td>{{req['priority']}}</td><td>{{req['executor']}}</td><td>{{req['completion_date']}}</td><td><b>{{req['status']}}</b></td><td>{{req['comment']}}</td><td><a href="/edit/{{req['id']}}">Ред.</a></td>
+<tr id="row-{{ req['id'] }}" class="{% if req['priority'] in ['Высокий','Срочный'] and req['status'] not in ['Выполнена', 'Отклонена'] %}high{% endif %}">
+    <td>{{req['id']}}</td>
+    <td>{{req['area']}}</td>
+    <td>{{req['created_at']}}</td>
+    <td>{{req['project_no']}}</td>
+    <td>{{req['horizon']}}</td>
+    <td>{{req['work_type']}}</td>
+    <td>{{req['created_by']}}</td>
+    <td>{{req['phone']}}</td>
+    <td>{{req['safety']}}</td>
+    <td>{{req['priority']}}</td>
+    
+    <!-- Поля для инлайн-редактирования -->
+    <td>
+        <input type="text" value="{{req['executor'] or ''}}" placeholder="ФИО..." 
+               onblur="updateInline({{req['id']}}, 'executor', this.value)">
+    </td>
+    <td>
+        <input type="date" class="date-input" value="{{req['completion_date'] or ''}}" 
+               onchange="updateInline({{req['id']}}, 'completion_date', this.value)">
+    </td>
+    <td>
+        <select onchange="handleStatusChange({{req['id']}}, this)">
+            <option value="Новая" {% if req['status'] == 'Новая' %}selected{% endif %}>Новая</option>
+            <option value="Принята" {% if req['status'] == 'Принята' %}selected{% endif %}>Принята</option>
+            <option value="В работе" {% if req['status'] == 'В работе' %}selected{% endif %}>В работе</option>
+            <option value="Выполнена" {% if req['status'] == 'Выполнена' %}selected{% endif %}>Выполнена</option>
+            <option value="Отклонена" {% if req['status'] == 'Отклонена' %}selected{% endif %}>Отклонена</option>
+        </select>
+    </td>
+    <td>
+        <input type="text" value="{{req['comment'] or ''}}" placeholder="Текст..." 
+               onblur="updateInline({{req['id']}}, 'comment', this.value)">
+    </td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
 <div style="margin-top:20px;"><a href="/export" style="background:#2a6e2a;color:#fff;padding:10px 15px;text-decoration:none;border-radius:4px;font-weight:bold;">Скачать Excel (для Р7)</a></div>
-{% endif %}
 </div>
-{% if not edit_mode %}
 <script>
-function refreshTable() {
-    fetch('/api/requests').then(res => res.json()).then(data => {
-        let html = '';
-        data.forEach(req => {
-            let isHigh = (req.priority === 'Высокий' || req.priority === 'Срочный') && (req.status !== 'Выполнена' && req.status !== 'Отклонена');
-            html += `<tr class="${isHigh ? 'high' : ''}">
-                <td>${req.id}</td><td>${req.area || ''}</td><td>${req.created_at}</td><td>${req.project_no || ''}</td><td>${req.horizon || ''}</td><td>${req.work_type || ''}</td><td>${req.created_by}</td><td>${req.phone || ''}</td><td>${req.safety || ''}</td><td>${req.priority}</td><td>${req.executor || ''}</td><td>${req.completion_date || ''}</td><td><b>${req.status}</b></td><td>${req.comment || ''}</td><td><a href="/edit/${req.id}">Ред.</a></td>
-            </tr>`;
+    // Функция обновления одной ячейки через API
+    function updateInline(id, field, value) {
+        fetch('/update_inline/' + id, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [field]: value })
+        }).then(res => res.json()).then(data => {
+            if (data.ok) {
+                checkRowColor(id);
+            }
         });
-        document.getElementById('table-body').innerHTML = html;
-    }).catch(e => console.log(e));
-}
-setInterval(refreshTable, 2000);
+    }
+    // Логика при смене статуса: автоподстановка даты
+    function handleStatusChange(id, selectElement) {
+        const newStatus = selectElement.value;
+        const row = document.getElementById('row-' + id);
+        const dateInput = row.querySelector('.date-input');
+        
+        if (newStatus === 'Выполнена' && !dateInput.value) {
+            const today = new Date().toISOString().split('T')[0];
+            dateInput.value = today;
+            updateInline(id, 'status', newStatus);
+            updateInline(id, 'completion_date', today);
+        } else {
+            updateInline(id, 'status', newStatus);
+        }
+    }
+    // Проверка цвета строки
+    function checkRowColor(id) {
+        const row = document.getElementById('row-' + id);
+        const priority = row.cells[9].innerText;
+        const status = row.querySelector('select').value;
+        
+        if ((priority === 'Высокий' || priority === 'Срочный') && (status !== 'Выполнена' && status !== 'Отклонена')) {
+            row.classList.add('high');
+        } else {
+            row.classList.remove('high');
+        }
+    }
+    // Функция автообновления таблицы
+    function refreshTable() {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) {
+            return; 
+        }
+        fetch('/api/requests').then(res => res.json()).then(data => {
+            let html = '';
+            data.forEach(req => {
+                let isHigh = (req.priority === 'Высокий' || req.priority === 'Срочный') && (req.status !== 'Выполнена' && req.status !== 'Отклонена');
+                html += `<tr id="row-${req.id}" class="${isHigh ? 'high' : ''}">
+                    <td>${req.id}</td><td>${req.area || ''}</td><td>${req.created_at}</td>
+                    <td>${req.project_no || ''}</td><td>${req.horizon || ''}</td><td>${req.work_type || ''}</td>
+                    <td>${req.created_by}</td><td>${req.phone || ''}</td><td>${req.safety || ''}</td><td>${req.priority}</td>
+                    
+                    <td><input type="text" value="${req.executor || ''}" placeholder="ФИО..." onblur="updateInline(${req.id}, 'executor', this.value)"></td>
+                    <td><input type="date" class="date-input" value="${req.completion_date || ''}" onchange="updateInline(${req.id}, 'completion_date', this.value)"></td>
+                    <td>
+                        <select onchange="handleStatusChange(${req.id}, this)">
+                            <option value="Новая" ${req.status === 'Новая' ? 'selected' : ''}>Новая</option>
+                            <option value="Принята" ${req.status === 'Принята' ? 'selected' : ''}>Принята</option>
+                            <option value="В работе" ${req.status === 'В работе' ? 'selected' : ''}>В работе</option>
+                            <option value="Выполнена" ${req.status === 'Выполнена' ? 'selected' : ''}>Выполнена</option>
+                            <option value="Отклонена" ${req.status === 'Отклонена' ? 'selected' : ''}>Отклонена</option>
+                        </select>
+                    </td>
+                    <td><input type="text" value="${req.comment || ''}" placeholder="Текст..." onblur="updateInline(${req.id}, 'comment', this.value)"></td>
+                </tr>`;
+            });
+            document.getElementById('table-body').innerHTML = html;
+        }).catch(e => console.log(e));
+    }
+    
+    setInterval(refreshTable, 2000);
 </script>
-{% endif %}
 </body></html>
 """
 @app.route('/')
@@ -140,7 +226,7 @@ def index():
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     saved_author = request.cookies.get('saved_author', '')
     saved_phone = request.cookies.get('saved_phone', '')
-    return render_template_string(HTML_PAGE, requests=rows, edit_mode=False, now=now, r=None, saved_author=saved_author, saved_phone=saved_phone)
+    return render_template_string(HTML_PAGE, requests=rows, now=now, saved_author=saved_author, saved_phone=saved_phone)
 @app.route('/api/requests')
 def api_requests():
     conn = sqlite3.connect(DB_PATH)
@@ -152,33 +238,40 @@ def api_requests():
 def create():
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT INTO requests (area, created_at, project_no, horizon, work_type, created_by, phone, safety, priority, executor, completion_date, status, comment, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (request.form.get('area',''), now, request.form.get('project_no',''), request.form.get('horizon',''), request.form.get('work_type',''), request.form['author'], request.form.get('phone',''), request.form['safety'], request.form['priority'], request.form.get('executor',''), request.form.get('completion_date',''), 'Новая', request.form.get('comment',''), now))
+    conn.execute("""INSERT INTO requests 
+        (area, created_at, project_no, horizon, work_type, created_by, phone, safety, priority, executor, completion_date, status, comment, updated_at) 
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (request.form.get('area',''), now, request.form.get('project_no',''), request.form.get('horizon',''), 
+         request.form.get('work_type',''), request.form['author'], request.form.get('phone',''), 
+         request.form['safety'], request.form['priority'], '', '', 'Новая', request.form.get('comment',''), now))
     conn.commit(); conn.close()
+    
     resp = make_response(redirect(url_for('index')))
     resp.set_cookie('saved_author', request.form['author'], max_age=365*24*60*60)
     resp.set_cookie('saved_phone', request.form.get('phone',''), max_age=365*24*60*60)
     return resp
-@app.route('/edit/<int:id>')
-def edit(id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    r = conn.execute("SELECT * FROM requests WHERE id=?", (id,)).fetchone()
-    conn.close()
-    if not r: return "Заявка не найдена", 404
-    return render_template_string(HTML_PAGE, r=r, edit_mode=True, saved_author=r['created_by'], saved_phone=r['phone'])
-@app.route('/update/<int:id>', methods=['POST'])
-def update(id):
+@app.route('/update_inline/<int:id>', methods=['POST'])
+def update_inline(id):
+    data = request.get_json()
+    if not data: return jsonify({"ok": False}), 400
+    
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE requests SET area=?, project_no=?, horizon=?, work_type=?, created_by=?, phone=?, safety=?, priority=?, executor=?, completion_date=?, status=?, comment=?, updated_at=? WHERE id=?",
-        (request.form.get('area',''), request.form.get('project_no',''), request.form.get('horizon',''), request.form.get('work_type',''), request.form['author'], request.form.get('phone',''), request.form['safety'], request.form['priority'], request.form.get('executor',''), request.form.get('completion_date',''), request.form['status'], request.form.get('comment',''), now, id))
-    conn.commit(); conn.close()
-    return redirect(url_for('index'))
+    field = list(data.keys())[0]
+    value = list(data.values())[0]
+    
+    # Разрешаем менять эти 4 поля (добавили comment)
+    if field in ['executor', 'completion_date', 'status', 'comment']:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(f"UPDATE requests SET {field}=?, updated_at=? WHERE id=?", (value, now, id))
+        conn.commit(); conn.close()
+        return jsonify({"ok": True})
+    
+    return jsonify({"ok": False, "error": "Invalid field"}), 400
 @app.route('/export')
 def export():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT id, area, created_at, project_no, horizon, work_type, created_by, phone, safety, priority, executor, completion_date, status, comment FROM requests ORDER BY id").fetchall()
+    rows = conn.execute("""SELECT id, area, created_at, project_no, horizon, work_type, created_by, phone, safety, priority, executor, completion_date, status, comment 
+                           FROM requests ORDER BY id""").fetchall()
     conn.close()
     wb = Workbook(); ws = wb.active
     ws.append(["№", "Участок", "Дата и время", "№ проекта", "Горизонт", "Вид работ", "ФИО подавшего", "Телефон", "Безопасность", "Приоритет", "Исполнитель", "Дата вып.", "Статус", "Примечание"])
