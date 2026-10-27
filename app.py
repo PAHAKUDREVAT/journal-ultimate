@@ -4,16 +4,23 @@ import sys
 import socket
 import webbrowser
 import threading
+import ctypes
 from datetime import datetime
 from io import BytesIO
 from flask import Flask, request, redirect, url_for, render_template_string, send_file, make_response, jsonify
 from openpyxl import Workbook
+import json
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'journal.db')
 app = Flask(__name__)
+# Скрываем консольное окно
+if sys.platform == 'win32':
+    whnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if whnd != 0:
+        ctypes.windll.user32.ShowWindow(whnd, 0)
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -22,6 +29,8 @@ def init_db():
         project_no TEXT, horizon TEXT, work_type TEXT, created_by TEXT NOT NULL,
         phone TEXT, safety TEXT, priority TEXT, executor TEXT, completion_date TEXT, 
         status TEXT, comment TEXT, updated_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY)''')
+    
     c.execute('''CREATE TRIGGER IF NOT EXISTS prevent_created_at_update BEFORE UPDATE ON requests
         FOR EACH ROW WHEN OLD.created_at <> NEW.created_at BEGIN SELECT RAISE(ABORT, 'immutable'); END''')
     c.execute('''CREATE TRIGGER IF NOT EXISTS prevent_delete BEFORE DELETE ON requests
@@ -44,14 +53,15 @@ th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;word-wrap:break-w
 th{background:#f8f9fa; font-weight:bold;} 
 input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px; border: 1px solid #ddd;}
 input:focus, select:focus { border-color: #1e3a5f; outline: none; }
-/* Стили для инлайн-полей в таблице */
 td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px solid #ccc; background: #fff;}
-td input[readonly] { background: #f0f0f0; border-color: transparent; }
-.btn{background:#1e3a5f;color:#fff;padding:10px;border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:10px;font-weight:bold;}
+.btn{background:#1e3a5f;color:#fff;padding:12px;border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:15px;font-weight:bold; font-size:14px;}
+.btn:hover { background: #16304e; }
 .high{background-color:#ffe6e6;color:#b03030;font-weight:bold;}
 .col-form{display:flex;gap:15px;margin-bottom:10px;}
 .col{flex:1;} label{font-size:11px;color:#555;font-weight:bold; display:block; margin-top:5px;} a{color:#1e3a5f;}
-.sync-badge { font-size: 11px; color: #2a6e2a; margin-bottom:10px; display: flex; align-items: center; gap: 5px; }
+.search-bar { display: flex; gap: 10px; margin-top: 20px; align-items: center; background: #eef2f6; padding: 10px; border-radius: 6px;}
+.search-bar input { margin: 0; flex: 1; }
+.sync-badge { font-size: 11px; color: #2a6e2a; display: flex; align-items: center; gap: 5px; }
 .dot { height: 8px; width: 8px; background-color: #2a6e2a; border-radius: 50%; display: inline-block; animation: blink 2s infinite; }
 @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 </style></head><body><div class="card">
@@ -86,11 +96,20 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
         <label>Дата и время подачи (не меняется):</label><input value="{{ now }}" readonly style="background:#eee;">
     </div>
 </div>
-<button type="submit" class="btn">Подать заявку</button>
+<button type="submit" class="btn">ПОДАТЬ ЗАЯВКУ</button>
 </form>
 <hr style="margin:20px 0; border:0; border-top:1px solid #ddd;">
-<div class="sync-badge"><span class="dot"></span> Обновление каждые 2 секунды. Изменения в зеленых колонках сохраняются автоматически.</div>
+<div class="search-bar">
+    <label style="margin:0; white-space:nowrap;">🔍 Поиск (фильтр):</label>
+    <input type="text" id="search-input" placeholder="Введите текст для поиска по любым колонкам..." oninput="applyFilter()">
+    <div class="sync-badge"><span class="dot"></span> Автообновление</div>
+</div>
+<!-- Ссылка на выгрузку в Excel (аккуратная, в правом верхнем углу над таблицей) -->
+<div style="text-align: right; margin-top: 10px;">
+    <a href="/export" style="color: #888; font-size: 12px; text-decoration: none; border-bottom: 1px dashed #888;" onmouseover="this.style.color='#333'" onmouseout="this.style.color='#888'">Выгрузка в Excel (Р7)</a>
+</div>
 <table>
+<thead>
 <tr>
     <th>№</th><th>Участок</th><th>Дата и время</th><th>№ проекта</th><th>Горизонт</th><th>Вид работ</th><th>ФИО подавшего</th><th>Телефон</th><th>Безопасность</th><th>Приоритет</th>
     <th style="background:#e8f4e8;">Исполнитель</th>
@@ -98,9 +117,10 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
     <th style="background:#e8f4e8;">Статус</th>
     <th style="background:#e8f4e8;">Примечание</th>
 </tr>
+</thead>
 <tbody id="table-body">
 {% for req in requests %}
-<tr id="row-{{ req['id'] }}" class="{% if req['priority'] in ['Высокий','Срочный'] and req['status'] not in ['Выполнена', 'Отклонена'] %}high{% endif %}">
+<tr id="row-{{ req['id'] }}" class="request-row {% if req['priority'] in ['Высокий','Срочный'] and req['status'] not in ['Выполнена', 'Отклонена'] %}high{% endif %}">
     <td>{{req['id']}}</td>
     <td>{{req['area']}}</td>
     <td>{{req['created_at']}}</td>
@@ -111,11 +131,16 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
     <td>{{req['phone']}}</td>
     <td>{{req['safety']}}</td>
     <td>{{req['priority']}}</td>
-    
-    <!-- Поля для инлайн-редактирования -->
     <td>
-        <input type="text" value="{{req['executor'] or ''}}" placeholder="ФИО..." 
-               onblur="updateInline({{req['id']}}, 'executor', this.value)">
+        <select onchange="updateInline({{req['id']}}, 'executor', this.value)">
+            <option value="">-- Выбрать --</option>
+            {% for exec_name in executors %}
+                <option value="{{ exec_name }}" {% if req['executor'] == exec_name %}selected{% endif %}>{{ exec_name }}</option>
+            {% endfor %}
+            {% if req['executor'] and req['executor'] not in executors %}
+                <option value="{{ req['executor'] }}" selected>{{ req['executor'] }}</option>
+            {% endif %}
+        </select>
     </td>
     <td>
         <input type="date" class="date-input" value="{{req['completion_date'] or ''}}" 
@@ -138,22 +163,37 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
 {% endfor %}
 </tbody>
 </table>
-<div style="margin-top:20px;"><a href="/export" style="background:#2a6e2a;color:#fff;padding:10px 15px;text-decoration:none;border-radius:4px;font-weight:bold;">Скачать Excel (для Р7)</a></div>
+<div style="margin-top: 30px; padding: 15px; background: #f9fbfd; border: 1px dashed #ccc; border-radius: 6px;">
+    <h4 style="margin-top:0;">Добавить нового исполнителя в список</h4>
+    <form method="POST" action="/add_executor" style="display:flex; gap:10px; align-items:center;">
+        <input type="text" name="new_executor" placeholder="Введите ФИО исполнителя (например: Петров П.П.)" required style="margin:0; flex:1;">
+        <button type="submit" style="background:#2a6e2a; color:#fff; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Добавить</button>
+    </form>
+</div>
 </div>
 <script>
-    // Функция обновления одной ячейки через API
+    function applyFilter() {
+        const query = document.getElementById('search-input').value.toLowerCase();
+        const rows = document.querySelectorAll('.request-row');
+        
+        rows.forEach(row => {
+            const text = row.innerText.toLowerCase();
+            if (text.includes(query)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
     function updateInline(id, field, value) {
         fetch('/update_inline/' + id, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ [field]: value })
         }).then(res => res.json()).then(data => {
-            if (data.ok) {
-                checkRowColor(id);
-            }
+            if (data.ok) checkRowColor(id);
         });
     }
-    // Логика при смене статуса: автоподстановка даты
     function handleStatusChange(id, selectElement) {
         const newStatus = selectElement.value;
         const row = document.getElementById('row-' + id);
@@ -168,11 +208,10 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
             updateInline(id, 'status', newStatus);
         }
     }
-    // Проверка цвета строки
     function checkRowColor(id) {
         const row = document.getElementById('row-' + id);
         const priority = row.cells[9].innerText;
-        const status = row.querySelector('select').value;
+        const status = row.querySelector('select[onchange^="handleStatusChange"]').value;
         
         if ((priority === 'Высокий' || priority === 'Срочный') && (status !== 'Выполнена' && status !== 'Отклонена')) {
             row.classList.add('high');
@@ -180,7 +219,6 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
             row.classList.remove('high');
         }
     }
-    // Функция автообновления таблицы
     function refreshTable() {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) {
@@ -190,12 +228,22 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
             let html = '';
             data.forEach(req => {
                 let isHigh = (req.priority === 'Высокий' || req.priority === 'Срочный') && (req.status !== 'Выполнена' && req.status !== 'Отклонена');
-                html += `<tr id="row-${req.id}" class="${isHigh ? 'high' : ''}">
+                
+                let execOptions = '<option value="">-- Выбрать --</option>';
+                const executorsList = {{ executors_json | safe }};
+                
+                executorsList.forEach(name => {
+                    execOptions += `<option value="${name}" ${req.executor === name ? 'selected' : ''}>${name}</option>`;
+                });
+                if (req.executor && !executorsList.includes(req.executor)) {
+                    execOptions += `<option value="${req.executor}" selected>${req.executor}</option>`;
+                }
+                html += `<tr id="row-${req.id}" class="request-row ${isHigh ? 'high' : ''}">
                     <td>${req.id}</td><td>${req.area || ''}</td><td>${req.created_at}</td>
                     <td>${req.project_no || ''}</td><td>${req.horizon || ''}</td><td>${req.work_type || ''}</td>
                     <td>${req.created_by}</td><td>${req.phone || ''}</td><td>${req.safety || ''}</td><td>${req.priority}</td>
                     
-                    <td><input type="text" value="${req.executor || ''}" placeholder="ФИО..." onblur="updateInline(${req.id}, 'executor', this.value)"></td>
+                    <td><select onchange="updateInline(${req.id}, 'executor', this.value)">${execOptions}</select></td>
                     <td><input type="date" class="date-input" value="${req.completion_date || ''}" onchange="updateInline(${req.id}, 'completion_date', this.value)"></td>
                     <td>
                         <select onchange="handleStatusChange(${req.id}, this)">
@@ -210,6 +258,7 @@ td input[readonly] { background: #f0f0f0; border-color: transparent; }
                 </tr>`;
             });
             document.getElementById('table-body').innerHTML = html;
+            applyFilter();
         }).catch(e => console.log(e));
     }
     
@@ -222,11 +271,33 @@ def index():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
+    exec_rows = conn.execute("SELECT name FROM executors ORDER BY name").fetchall()
+    executors = [r['name'] for r in exec_rows]
     conn.close()
+    
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     saved_author = request.cookies.get('saved_author', '')
     saved_phone = request.cookies.get('saved_phone', '')
-    return render_template_string(HTML_PAGE, requests=rows, now=now, saved_author=saved_author, saved_phone=saved_phone)
+    
+    return render_template_string(HTML_PAGE, 
+                                  requests=rows, 
+                                  now=now, 
+                                  saved_author=saved_author, 
+                                  saved_phone=saved_phone,
+                                  executors=executors,
+                                  executors_json=json.dumps(executors))
+@app.route('/add_executor', methods=['POST'])
+def add_executor():
+    new_exec = request.form.get('new_executor', '').strip()
+    if new_exec:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("INSERT INTO executors (name) VALUES (?)", (new_exec,))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+        conn.close()
+    return redirect(url_for('index'))
 @app.route('/api/requests')
 def api_requests():
     conn = sqlite3.connect(DB_PATH)
@@ -259,7 +330,6 @@ def update_inline(id):
     field = list(data.keys())[0]
     value = list(data.values())[0]
     
-    # Разрешаем менять эти 4 поля (добавили comment)
     if field in ['executor', 'completion_date', 'status', 'comment']:
         conn = sqlite3.connect(DB_PATH)
         conn.execute(f"UPDATE requests SET {field}=?, updated_at=? WHERE id=?", (value, now, id))
