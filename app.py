@@ -21,6 +21,18 @@ if sys.platform == 'win32':
     whnd = ctypes.windll.kernel32.GetConsoleWindow()
     if whnd != 0:
         ctypes.windll.user32.ShowWindow(whnd, 0)
+# Ваш список исполнителей (жестко зашит в программу)
+EXECUTORS_LIST = [
+    "Котельников. С. А.",
+    "Ишеев Б. М.",
+    "Батомункуев Ц. Э.",
+    "Абилов М. М.",
+    "Буринов И. Ю.",
+    "Галяутдинов Э. И.",
+    "Дианов М. А.",
+    "Кудреватов П. В.",
+    "Драгун И. И."
+]
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -29,7 +41,6 @@ def init_db():
         project_no TEXT, horizon TEXT, work_type TEXT, created_by TEXT NOT NULL,
         phone TEXT, safety TEXT, priority TEXT, executor TEXT, completion_date TEXT, 
         status TEXT, comment TEXT, updated_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS executors (name TEXT PRIMARY KEY)''')
     
     c.execute('''CREATE TRIGGER IF NOT EXISTS prevent_created_at_update BEFORE UPDATE ON requests
         FOR EACH ROW WHEN OLD.created_at <> NEW.created_at BEGIN SELECT RAISE(ABORT, 'immutable'); END''')
@@ -104,7 +115,6 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
     <input type="text" id="search-input" placeholder="Введите текст для поиска по любым колонкам..." oninput="applyFilter()">
     <div class="sync-badge"><span class="dot"></span> Автообновление</div>
 </div>
-<!-- Ссылка на выгрузку в Excel (аккуратная, в правом верхнем углу над таблицей) -->
 <div style="text-align: right; margin-top: 10px;">
     <a href="/export" style="color: #888; font-size: 12px; text-decoration: none; border-bottom: 1px dashed #888;" onmouseover="this.style.color='#333'" onmouseout="this.style.color='#888'">Выгрузка в Excel (Р7)</a>
 </div>
@@ -131,6 +141,7 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
     <td>{{req['phone']}}</td>
     <td>{{req['safety']}}</td>
     <td>{{req['priority']}}</td>
+    
     <td>
         <select onchange="updateInline({{req['id']}}, 'executor', this.value)">
             <option value="">-- Выбрать --</option>
@@ -163,13 +174,6 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
 {% endfor %}
 </tbody>
 </table>
-<div style="margin-top: 30px; padding: 15px; background: #f9fbfd; border: 1px dashed #ccc; border-radius: 6px;">
-    <h4 style="margin-top:0;">Добавить нового исполнителя в список</h4>
-    <form method="POST" action="/add_executor" style="display:flex; gap:10px; align-items:center;">
-        <input type="text" name="new_executor" placeholder="Введите ФИО исполнителя (например: Петров П.П.)" required style="margin:0; flex:1;">
-        <button type="submit" style="background:#2a6e2a; color:#fff; border:none; padding:8px 15px; border-radius:4px; cursor:pointer;">Добавить</button>
-    </form>
-</div>
 </div>
 <script>
     function applyFilter() {
@@ -271,8 +275,6 @@ def index():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
-    exec_rows = conn.execute("SELECT name FROM executors ORDER BY name").fetchall()
-    executors = [r['name'] for r in exec_rows]
     conn.close()
     
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
@@ -284,20 +286,8 @@ def index():
                                   now=now, 
                                   saved_author=saved_author, 
                                   saved_phone=saved_phone,
-                                  executors=executors,
-                                  executors_json=json.dumps(executors))
-@app.route('/add_executor', methods=['POST'])
-def add_executor():
-    new_exec = request.form.get('new_executor', '').strip()
-    if new_exec:
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            conn.execute("INSERT INTO executors (name) VALUES (?)", (new_exec,))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            pass
-        conn.close()
-    return redirect(url_for('index'))
+                                  executors=EXECUTORS_LIST,
+                                  executors_json=json.dumps(EXECUTORS_LIST))
 @app.route('/api/requests')
 def api_requests():
     conn = sqlite3.connect(DB_PATH)
