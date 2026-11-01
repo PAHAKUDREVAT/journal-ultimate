@@ -21,7 +21,7 @@ if sys.platform == 'win32':
     whnd = ctypes.windll.kernel32.GetConsoleWindow()
     if whnd != 0:
         ctypes.windll.user32.ShowWindow(whnd, 0)
-# Ваш список исполнителей (жестко зашит в программу)
+# Ваш список исполнителей
 EXECUTORS_LIST = [
     "Котельников. С. А.",
     "Ишеев Б. М.",
@@ -61,18 +61,21 @@ body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#222;padding
 .card{background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.1);max-width:100%;margin:0 auto}
 table{width:100%;border-collapse:collapse;margin-top:15px;font-size:11px;}
 th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;word-wrap:break-word; vertical-align:top;}
-th{background:#f8f9fa; font-weight:bold;} 
+th{background:#f8f9fa; font-weight:bold;}
+/* Стили для фильтров в таблице */
+.filter-row th { padding: 2px; background: #e9ecef; }
+.col-filter { width: 100%; padding: 2px; font-size: 10px; border: 1px solid #ccc; border-radius: 2px;}
 input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px; border: 1px solid #ddd;}
 input:focus, select:focus { border-color: #1e3a5f; outline: none; }
 td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px solid #ccc; background: #fff;}
 .btn{background:#1e3a5f;color:#fff;padding:12px;border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:15px;font-weight:bold; font-size:14px;}
 .btn:hover { background: #16304e; }
-.high{background-color:#ffe6e6;color:#b03030;font-weight:bold;}
 .col-form{display:flex;gap:15px;margin-bottom:10px;}
 .col{flex:1;} label{font-size:11px;color:#555;font-weight:bold; display:block; margin-top:5px;} a{color:#1e3a5f;}
-.search-bar { display: flex; gap: 10px; margin-top: 20px; align-items: center; background: #eef2f6; padding: 10px; border-radius: 6px;}
-.search-bar input { margin: 0; flex: 1; }
-.sync-badge { font-size: 11px; color: #2a6e2a; display: flex; align-items: center; gap: 5px; }
+/* Цвета статусов */
+.high { background-color:#ffe6e6; color:#b03030; font-weight:bold; } /* Красный для срочных */
+.done { background-color:#e6ffe6; color:#2a6e2a; } /* Зеленый для выполненных */
+.sync-badge { font-size: 11px; color: #2a6e2a; display: flex; align-items: center; gap: 5px; margin-bottom:10px;}
 .dot { height: 8px; width: 8px; background-color: #2a6e2a; border-radius: 50%; display: inline-block; animation: blink 2s infinite; }
 @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 </style></head><body><div class="card">
@@ -110,15 +113,11 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
 <button type="submit" class="btn">ПОДАТЬ ЗАЯВКУ</button>
 </form>
 <hr style="margin:20px 0; border:0; border-top:1px solid #ddd;">
-<div class="search-bar">
-    <label style="margin:0; white-space:nowrap;">🔍 Поиск (фильтр):</label>
-    <input type="text" id="search-input" placeholder="Введите текст для поиска по любым колонкам..." oninput="applyFilter()">
-    <div class="sync-badge"><span class="dot"></span> Автообновление</div>
-</div>
-<div style="text-align: right; margin-top: 10px;">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="sync-badge"><span class="dot"></span> Данные обновляются автоматически</div>
     <a href="/export" style="color: #888; font-size: 12px; text-decoration: none; border-bottom: 1px dashed #888;" onmouseover="this.style.color='#333'" onmouseout="this.style.color='#888'">Выгрузка в Excel (Р7)</a>
 </div>
-<table>
+<table id="main-table">
 <thead>
 <tr>
     <th>№</th><th>Участок</th><th>Дата и время</th><th>№ проекта</th><th>Горизонт</th><th>Вид работ</th><th>ФИО подавшего</th><th>Телефон</th><th>Безопасность</th><th>Приоритет</th>
@@ -127,10 +126,28 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
     <th style="background:#e8f4e8;">Статус</th>
     <th style="background:#e8f4e8;">Примечание</th>
 </tr>
+<!-- Строка с фильтрами (как в Excel) -->
+<tr class="filter-row">
+    <th></th>
+    <th><select class="col-filter" data-col="1" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th></th>
+    <th></th>
+    <th><select class="col-filter" data-col="4" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th></th>
+    <th></th>
+    <th></th>
+    <th><select class="col-filter" data-col="8" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th><select class="col-filter" data-col="9" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th><select class="col-filter" data-col="10" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th></th>
+    <th><select class="col-filter" data-col="12" onchange="applyFilters()"><option value="">Все</option></select></th>
+    <th></th>
+</tr>
 </thead>
 <tbody id="table-body">
 {% for req in requests %}
-<tr id="row-{{ req['id'] }}" class="request-row {% if req['priority'] in ['Высокий','Срочный'] and req['status'] not in ['Выполнена', 'Отклонена'] %}high{% endif %}">
+{% set row_class = 'done' if req['status'] == 'Выполнена' else ('high' if req['priority'] in ['Высокий','Срочный'] and req['status'] != 'Отклонена' else '') %}
+<tr id="row-{{ req['id'] }}" class="request-row {{ row_class }}">
     <td>{{req['id']}}</td>
     <td>{{req['area']}}</td>
     <td>{{req['created_at']}}</td>
@@ -176,26 +193,84 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
 </table>
 </div>
 <script>
-    function applyFilter() {
-        const query = document.getElementById('search-input').value.toLowerCase();
+    // --- ФИЛЬТРЫ ---
+    // Функция сбора уникальных значений для выпадающих списков
+    function populateFilters() {
         const rows = document.querySelectorAll('.request-row');
-        
+        const filters = {1: new Set(), 4: new Set(), 8: new Set(), 9: new Set(), 10: new Set(), 12: new Set()};
         rows.forEach(row => {
-            const text = row.innerText.toLowerCase();
-            if (text.includes(query)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
+            if (row.cells[1].innerText.trim()) filters[1].add(row.cells[1].innerText.trim());
+            if (row.cells[4].innerText.trim()) filters[4].add(row.cells[4].innerText.trim());
+            if (row.cells[8].innerText.trim()) filters[8].add(row.cells[8].innerText.trim());
+            if (row.cells[9].innerText.trim()) filters[9].add(row.cells[9].innerText.trim());
+            
+            const exSelect = row.cells[10].querySelector('select');
+            if (exSelect && exSelect.value) filters[10].add(exSelect.value);
+            
+            const stSelect = row.cells[12].querySelector('select');
+            if (stSelect && stSelect.value) filters[12].add(stSelect.value);
+        });
+        for (let col in filters) {
+            const select = document.querySelector(`.col-filter[data-col="${col}"]`);
+            if (!select) continue;
+            const currentVal = select.value; // Запоминаем текущий выбор
+            select.innerHTML = '<option value="">Все</option>';
+            
+            const sortedValues = Array.from(filters[col]).sort();
+            sortedValues.forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val; opt.textContent = val;
+                select.appendChild(opt);
+            });
+            // Восстанавливаем выбор, если он еще существует в базе
+            if (sortedValues.includes(currentVal)) select.value = currentVal;
+        }
+    }
+    // Функция применения фильтров
+    function applyFilters() {
+        const rows = document.querySelectorAll('.request-row');
+        const selects = document.querySelectorAll('.col-filter');
+        rows.forEach(row => {
+            let show = true;
+            selects.forEach(select => {
+                const colIdx = parseInt(select.getAttribute('data-col'));
+                const filterVal = select.value;
+                if (filterVal === "") return; // Если выбрано "Все" - не фильтруем
+                let cellVal = "";
+                const cell = row.cells[colIdx];
+                const cellSelect = cell.querySelector('select');
+                
+                // Если в ячейке выпадающий список, берем его значение, иначе текст
+                if (cellSelect) {
+                    cellVal = cellSelect.value;
+                } else {
+                    cellVal = cell.innerText.trim();
+                }
+                if (cellVal !== filterVal) show = false;
+            });
+            row.style.display = show ? '' : 'none';
         });
     }
+    // --- СОХРАНЕНИЕ ИЗМЕНЕНИЙ ---
     function updateInline(id, field, value) {
         fetch('/update_inline/' + id, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ [field]: value })
         }).then(res => res.json()).then(data => {
-            if (data.ok) checkRowColor(id);
+            if (data.ok) {
+                // Мгновенно меняем цвет при смене статуса
+                if (field === 'status') {
+                    const row = document.getElementById('row-' + id);
+                    if (value === 'Выполнена') {
+                        row.className = 'request-row done';
+                    } else if (row.cells[9].innerText.includes('Высокий') || row.cells[9].innerText.includes('Срочный')) {
+                        row.className = 'request-row high';
+                    } else {
+                        row.className = 'request-row';
+                    }
+                }
+            }
         });
     }
     function handleStatusChange(id, selectElement) {
@@ -212,37 +287,29 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             updateInline(id, 'status', newStatus);
         }
     }
-    function checkRowColor(id) {
-        const row = document.getElementById('row-' + id);
-        const priority = row.cells[9].innerText;
-        const status = row.querySelector('select[onchange^="handleStatusChange"]').value;
-        
-        if ((priority === 'Высокий' || priority === 'Срочный') && (status !== 'Выполнена' && status !== 'Отклонена')) {
-            row.classList.add('high');
-        } else {
-            row.classList.remove('high');
-        }
-    }
+    // --- АВТООБНОВЛЕНИЕ ---
     function refreshTable() {
         const active = document.activeElement;
+        // Не обновляем, если пользователь в этот момент печатает или выбирает в таблице
         if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) {
             return; 
         }
         fetch('/api/requests').then(res => res.json()).then(data => {
             let html = '';
             data.forEach(req => {
-                let isHigh = (req.priority === 'Высокий' || req.priority === 'Срочный') && (req.status !== 'Выполнена' && req.status !== 'Отклонена');
+                let rowClass = '';
+                if (req.status === 'Выполнена') rowClass = 'done';
+                else if ((req.priority === 'Высокий' || req.priority === 'Срочный') && req.status !== 'Отклонена') rowClass = 'high';
                 
                 let execOptions = '<option value="">-- Выбрать --</option>';
                 const executorsList = {{ executors_json | safe }};
-                
                 executorsList.forEach(name => {
                     execOptions += `<option value="${name}" ${req.executor === name ? 'selected' : ''}>${name}</option>`;
                 });
                 if (req.executor && !executorsList.includes(req.executor)) {
                     execOptions += `<option value="${req.executor}" selected>${req.executor}</option>`;
                 }
-                html += `<tr id="row-${req.id}" class="request-row ${isHigh ? 'high' : ''}">
+                html += `<tr id="row-${req.id}" class="request-row ${rowClass}">
                     <td>${req.id}</td><td>${req.area || ''}</td><td>${req.created_at}</td>
                     <td>${req.project_no || ''}</td><td>${req.horizon || ''}</td><td>${req.work_type || ''}</td>
                     <td>${req.created_by}</td><td>${req.phone || ''}</td><td>${req.safety || ''}</td><td>${req.priority}</td>
@@ -262,10 +329,15 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
                 </tr>`;
             });
             document.getElementById('table-body').innerHTML = html;
-            applyFilter();
+            
+            // После обновления перестраиваем фильтры и применяем их
+            populateFilters();
+            applyFilters();
         }).catch(e => console.log(e));
     }
     
+    // Инициализация при загрузке страницы
+    populateFilters();
     setInterval(refreshTable, 2000);
 </script>
 </body></html>
