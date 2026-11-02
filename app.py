@@ -7,7 +7,7 @@ import threading
 import ctypes
 from datetime import datetime
 from io import BytesIO
-from flask import Flask, request, redirect, url_for, render_template_string, send_file, make_response, jsonify
+from flask import Flask, request, redirect, url_for, render_template_string, send_file, make_response, jsonify, send_from_directory
 from openpyxl import Workbook
 import json
 if getattr(sys, 'frozen', False):
@@ -53,6 +53,28 @@ def get_local_ip():
     try: s.connect(("8.8.8.8", 80)); return s.getsockname()[0]
     except: return "127.0.0.1"
     finally: s.close()
+# --- ФУНКЦИЯ УМНОЙ СОРТИРОВКИ ---
+def get_sorted_requests():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM requests").fetchall()
+    conn.close()
+    today_str = datetime.now().strftime("%d.%m.%Y")
+    def sort_key(row):
+        # Проверяем, подана ли заявка сегодня
+        is_today = row['created_at'].startswith(today_str)
+        # Проверяем, активна ли заявка (не выполнена и не отклонена)
+        is_active = row['status'] not in ['Выполнена', 'Отклонена']
+        # Распределяем по группам (чем меньше цифра, тем выше в списке)
+        if is_today:
+            group = 1  # Сегодняшние заявки (любые)
+        elif is_active:
+            group = 2  # Старые, но еще не выполненные (не забываем про них)
+        else:
+            group = 3  # Старый архив (выполненные/отклоненные)
+        # Внутри каждой группы сортируем по ID (сначала новые)
+        return (group, -row['id'])
+    return sorted(rows, key=sort_key)
 HTML_PAGE = """
 <!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Журнал заявок</title>
@@ -62,24 +84,58 @@ body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#222;padding
 table{width:100%;border-collapse:collapse;margin-top:15px;font-size:11px;}
 th,td{padding:6px;border-bottom:1px solid #eee;text-align:left;word-wrap:break-word; vertical-align:top;}
 th{background:#f8f9fa; font-weight:bold;}
-/* Стили для фильтров в таблице */
-.filter-row th { padding: 2px; background: #e9ecef; }
-.col-filter { width: 100%; padding: 2px; font-size: 10px; border: 1px solid #ccc; border-radius: 2px;}
-input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px; border: 1px solid #ddd;}
+.header-container { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+.header-logo { height: 50px; max-width: 150px; object-fit: contain; }
+.header-title { margin: 0; font-size: 24px; }
+input,select,textarea{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-family:inherit;font-size:12px; border: 1px solid #ddd; border-radius:4px;}
 input:focus, select:focus { border-color: #1e3a5f; outline: none; }
-td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px solid #ccc; background: #fff;}
 .btn{background:#1e3a5f;color:#fff;padding:12px;border:none;border-radius:4px;cursor:pointer;width:100%;margin-top:15px;font-weight:bold; font-size:14px;}
 .btn:hover { background: #16304e; }
 .col-form{display:flex;gap:15px;margin-bottom:10px;}
 .col{flex:1;} label{font-size:11px;color:#555;font-weight:bold; display:block; margin-top:5px;} a{color:#1e3a5f;}
+td select, td input[type="date"], td textarea.comment-input {
+    width: 100%; padding: 4px; font-size: 11px; margin: 0; border: 1px solid transparent;
+    background: transparent; color: inherit; box-sizing: border-box; font-family: inherit;
+    border-radius: 3px; transition: all 0.2s; appearance: none; -webkit-appearance: none; -moz-appearance: none;
+}
+td select {
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23999%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat; background-position: right 4px center; background-size: 8px;
+    padding-right: 15px; background-color: transparent; opacity: 0.7;
+}
+td select:hover, td input[type="date"]:hover, td textarea.comment-input:hover {
+    border-color: #ccc; background-color: #fff; opacity: 1;
+}
+td select:focus, td input[type="date"]:focus, td textarea.comment-input:focus {
+    border-color: #1e3a5f; background-color: #fff; outline: none; opacity: 1; box-shadow: 0 0 3px rgba(30,58,95,0.2);
+}
+textarea.comment-input { resize: vertical; min-height: 26px; overflow: hidden; }
+.filter-row th { padding: 4px 2px; background: #fafafa; border-bottom: 2px solid #e9ecef;}
+.col-filter { 
+    width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid transparent; 
+    background: transparent; border-radius: 3px; color: #555;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ccc%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat; background-position: right center; background-size: 6px;
+}
+.col-filter:hover, .col-filter:focus { border-color: #ccc; background-color: #fff; color: #000; }
 /* Цвета статусов */
-.high { background-color:#ffe6e6; color:#b03030; font-weight:bold; } /* Красный для срочных */
-.done { background-color:#e6ffe6; color:#2a6e2a; } /* Зеленый для выполненных */
+.high { background-color:#ffe6e6; }
+.high td { color: #b03030; }
+.done { background-color:#e6ffe6; }
+.done td, .done input, .done select, .done textarea { color: #000 !important; }
+.rejected { background-color: #f2f2f2; opacity: 0.75; }
+.rejected td, .rejected input, .rejected select, .rejected textarea { 
+    text-decoration: line-through !important; color: #777 !important; 
+}
 .sync-badge { font-size: 11px; color: #2a6e2a; display: flex; align-items: center; gap: 5px; margin-bottom:10px;}
 .dot { height: 8px; width: 8px; background-color: #2a6e2a; border-radius: 50%; display: inline-block; animation: blink 2s infinite; }
 @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 </style></head><body><div class="card">
-<h2 style="margin-top:0;">Журнал заявок маркшейдерской службы</h2>
+<div class="header-container">
+    <img src="/logo.png" class="header-logo" alt="Логотип" onerror="this.style.display='none'">
+    <h2 class="header-title">Журнал заявок маркшейдерской службы</h2>
+</div>
 <form method="POST" action="/create">
 <div class="col-form">
     <div class="col">
@@ -124,9 +180,8 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
     <th style="background:#e8f4e8;">Исполнитель</th>
     <th style="background:#e8f4e8;">Дата вып.</th>
     <th style="background:#e8f4e8;">Статус</th>
-    <th style="background:#e8f4e8;">Примечание</th>
+    <th style="background:#e8f4e8; min-width: 200px;">Примечание</th>
 </tr>
-<!-- Строка с фильтрами (как в Excel) -->
 <tr class="filter-row">
     <th></th>
     <th><select class="col-filter" data-col="1" onchange="applyFilters()"><option value="">Все</option></select></th>
@@ -146,7 +201,7 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
 </thead>
 <tbody id="table-body">
 {% for req in requests %}
-{% set row_class = 'done' if req['status'] == 'Выполнена' else ('high' if req['priority'] in ['Высокий','Срочный'] and req['status'] != 'Отклонена' else '') %}
+{% set row_class = 'done' if req['status'] == 'Выполнена' else ('rejected' if req['status'] == 'Отклонена' else ('high' if req['priority'] in ['Высокий','Срочный'] else '')) %}
 <tr id="row-{{ req['id'] }}" class="request-row {{ row_class }}">
     <td>{{req['id']}}</td>
     <td>{{req['area']}}</td>
@@ -158,7 +213,6 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
     <td>{{req['phone']}}</td>
     <td>{{req['safety']}}</td>
     <td>{{req['priority']}}</td>
-    
     <td>
         <select onchange="updateInline({{req['id']}}, 'executor', this.value)">
             <option value="">-- Выбрать --</option>
@@ -184,8 +238,7 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
         </select>
     </td>
     <td>
-        <input type="text" value="{{req['comment'] or ''}}" placeholder="Текст..." 
-               onblur="updateInline({{req['id']}}, 'comment', this.value)">
+        <textarea rows="1" class="comment-input" onblur="updateInline({{req['id']}}, 'comment', this.value)" oninput="this.style.height = '';this.style.height = this.scrollHeight + 'px'">{{req['comment'] or ''}}</textarea>
     </td>
 </tr>
 {% endfor %}
@@ -193,8 +246,6 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
 </table>
 </div>
 <script>
-    // --- ФИЛЬТРЫ ---
-    // Функция сбора уникальных значений для выпадающих списков
     function populateFilters() {
         const rows = document.querySelectorAll('.request-row');
         const filters = {1: new Set(), 4: new Set(), 8: new Set(), 9: new Set(), 10: new Set(), 12: new Set()};
@@ -213,7 +264,7 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
         for (let col in filters) {
             const select = document.querySelector(`.col-filter[data-col="${col}"]`);
             if (!select) continue;
-            const currentVal = select.value; // Запоминаем текущий выбор
+            const currentVal = select.value;
             select.innerHTML = '<option value="">Все</option>';
             
             const sortedValues = Array.from(filters[col]).sort();
@@ -222,11 +273,9 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
                 opt.value = val; opt.textContent = val;
                 select.appendChild(opt);
             });
-            // Восстанавливаем выбор, если он еще существует в базе
             if (sortedValues.includes(currentVal)) select.value = currentVal;
         }
     }
-    // Функция применения фильтров
     function applyFilters() {
         const rows = document.querySelectorAll('.request-row');
         const selects = document.querySelectorAll('.col-filter');
@@ -235,12 +284,11 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             selects.forEach(select => {
                 const colIdx = parseInt(select.getAttribute('data-col'));
                 const filterVal = select.value;
-                if (filterVal === "") return; // Если выбрано "Все" - не фильтруем
+                if (filterVal === "") return;
                 let cellVal = "";
                 const cell = row.cells[colIdx];
                 const cellSelect = cell.querySelector('select');
                 
-                // Если в ячейке выпадающий список, берем его значение, иначе текст
                 if (cellSelect) {
                     cellVal = cellSelect.value;
                 } else {
@@ -251,7 +299,6 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             row.style.display = show ? '' : 'none';
         });
     }
-    // --- СОХРАНЕНИЕ ИЗМЕНЕНИЙ ---
     function updateInline(id, field, value) {
         fetch('/update_inline/' + id, {
             method: 'POST',
@@ -259,11 +306,12 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             body: JSON.stringify({ [field]: value })
         }).then(res => res.json()).then(data => {
             if (data.ok) {
-                // Мгновенно меняем цвет при смене статуса
                 if (field === 'status') {
                     const row = document.getElementById('row-' + id);
                     if (value === 'Выполнена') {
                         row.className = 'request-row done';
+                    } else if (value === 'Отклонена') {
+                        row.className = 'request-row rejected';
                     } else if (row.cells[9].innerText.includes('Высокий') || row.cells[9].innerText.includes('Срочный')) {
                         row.className = 'request-row high';
                     } else {
@@ -287,10 +335,8 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             updateInline(id, 'status', newStatus);
         }
     }
-    // --- АВТООБНОВЛЕНИЕ ---
     function refreshTable() {
         const active = document.activeElement;
-        // Не обновляем, если пользователь в этот момент печатает или выбирает в таблице
         if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) {
             return; 
         }
@@ -299,7 +345,8 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
             data.forEach(req => {
                 let rowClass = '';
                 if (req.status === 'Выполнена') rowClass = 'done';
-                else if ((req.priority === 'Высокий' || req.priority === 'Срочный') && req.status !== 'Отклонена') rowClass = 'high';
+                else if (req.status === 'Отклонена') rowClass = 'rejected';
+                else if ((req.priority === 'Высокий' || req.priority === 'Срочный')) rowClass = 'high';
                 
                 let execOptions = '<option value="">-- Выбрать --</option>';
                 const executorsList = {{ executors_json | safe }};
@@ -325,30 +372,35 @@ td input, td select { padding: 4px; font-size: 11px; margin: 0; border: 1px soli
                             <option value="Отклонена" ${req.status === 'Отклонена' ? 'selected' : ''}>Отклонена</option>
                         </select>
                     </td>
-                    <td><input type="text" value="${req.comment || ''}" placeholder="Текст..." onblur="updateInline(${req.id}, 'comment', this.value)"></td>
+                    <td><textarea rows="1" class="comment-input" onblur="updateInline(${req.id}, 'comment', this.value)" oninput="this.style.height = '';this.style.height = this.scrollHeight + 'px'">${req.comment || ''}</textarea></td>
                 </tr>`;
             });
             document.getElementById('table-body').innerHTML = html;
             
-            // После обновления перестраиваем фильтры и применяем их
+            document.querySelectorAll('.comment-input').forEach(ta => {
+                ta.style.height = '';
+                ta.style.height = ta.scrollHeight + 'px';
+            });
             populateFilters();
             applyFilters();
         }).catch(e => console.log(e));
     }
     
-    // Инициализация при загрузке страницы
     populateFilters();
     setInterval(refreshTable, 2000);
 </script>
 </body></html>
 """
+@app.route('/logo.png')
+def logo():
+    logo_path = os.path.join(BASE_DIR, 'logo.png')
+    if os.path.exists(logo_path):
+        return send_from_directory(BASE_DIR, 'logo.png')
+    else:
+        return "", 404
 @app.route('/')
 def index():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
-    conn.close()
-    
+    rows = get_sorted_requests()
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     saved_author = request.cookies.get('saved_author', '')
     saved_phone = request.cookies.get('saved_phone', '')
@@ -362,10 +414,8 @@ def index():
                                   executors_json=json.dumps(EXECUTORS_LIST))
 @app.route('/api/requests')
 def api_requests():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
-    conn.close()
+    # Возвращаем данные уже отсортированными
+    rows = get_sorted_requests()
     return jsonify([dict(ix) for ix in rows])
 @app.route('/create', methods=['POST'])
 def create():
